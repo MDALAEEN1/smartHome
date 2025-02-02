@@ -27,7 +27,11 @@ class _CustomeBigContinerState extends State<CustomeBigContiner> {
         width: 400,
         height: 200,
         decoration: BoxDecoration(
-            color: kAppColor,
+            gradient: LinearGradient(
+              colors: klistappColor,
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
             borderRadius: BorderRadius.all(Radius.circular(20)),
             boxShadow: [
               BoxShadow(

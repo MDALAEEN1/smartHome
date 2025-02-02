@@ -124,7 +124,7 @@ class _HomepageState extends State<Homepage> {
               child: CustomIcon(
                 iconPic: rooms[index]["icon"]!,
                 background: currentId == rooms[index]['id']!
-                    ? kAppColor
+                    ? const Color.fromARGB(161, 104, 185, 251)
                     : kBackgroundColor,
                 iconText: rooms[index]["label"]!,
                 onTap: () {

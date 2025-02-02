@@ -84,7 +84,10 @@ class _CustomeSmallContinerState extends State<CustomeSmallContiner> {
         width: 180,
         height: 185,
         decoration: BoxDecoration(
-          color: kAppColor, // لون الخلفية من الثوابت
+          gradient: LinearGradient(
+              colors: klistappColor,
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight),
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
