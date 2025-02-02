@@ -1,17 +1,16 @@
-import 'dart:async'; // استيراد مكتبة StreamSubscription
+import 'dart:async'; // استيراد Timer
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:smart_home/const.dart'; // تأكد من استيراد الثوابت الخاصة بك
 
 class CustomeSmallContiner extends StatefulWidget {
   final String messageText;
-  final String
-      deviceId; // معرّف الجهاز لربط التحديث بالجهاز الصحيح في قاعدة البيانات
+  final String deviceId; // معرّف الجهاز لربط التحديث بالجهاز الصحيح
 
   const CustomeSmallContiner({
     super.key,
     required this.messageText,
-    required this.deviceId, // تمرير معرّف الجهاز
+    required this.deviceId,
   });
 
   @override
@@ -19,9 +18,12 @@ class CustomeSmallContiner extends StatefulWidget {
 }
 
 class _CustomeSmallContinerState extends State<CustomeSmallContiner> {
-  bool isSwitched = false; // متغير لحالة التبديل
-  StreamSubscription<DatabaseEvent>?
-      _subscription; // متغير لحفظ الاشتراك في Firebase
+  bool isSwitched = false; // حالة مفتاح التشغيل
+  StreamSubscription<DatabaseEvent>? _subscription;
+  Timer? _timer; // مؤقت لتحديث الوقت
+  int elapsedMinutes = 0; // عدد الدقائق منذ التشغيل
+  int elapsedHours = 0; // عدد الساعات منذ التشغيل
+  DateTime? startTime; // وقت بداية التشغيل
 
   @override
   void initState() {
@@ -29,7 +31,7 @@ class _CustomeSmallContinerState extends State<CustomeSmallContiner> {
     _fetchDeviceState();
   }
 
-  // ✅ جلب الحالة الأولية للجهاز من Firebase Realtime Database
+  // ✅ جلب الحالة الأولية للجهاز
   void _fetchDeviceState() {
     DatabaseReference ref =
         FirebaseDatabase.instance.ref("devices/${widget.deviceId}");
@@ -38,9 +40,20 @@ class _CustomeSmallContinerState extends State<CustomeSmallContiner> {
       final data = event.snapshot.value;
 
       if (data != null && data is Map) {
+        bool newState = data['isOn'] ?? false;
+
         if (mounted) {
           setState(() {
-            isSwitched = data['isOn'] ?? false;
+            isSwitched = newState;
+
+            if (isSwitched) {
+              // إذا تم تشغيل الجهاز، احسب المدة منذ وقت التشغيل المحفوظ
+              startTime = DateTime.tryParse(data['startTime'] ?? "") ??
+                  DateTime.now(); // وقت التشغيل المحفوظ
+              _startTimer();
+            } else {
+              _stopTimer(); // عند إطفاء الجهاز، أوقف المؤقت
+            }
           });
         }
       }
@@ -49,20 +62,28 @@ class _CustomeSmallContinerState extends State<CustomeSmallContiner> {
     });
   }
 
-  // ✅ تحديث حالة الجهاز في Firebase Realtime Database
+  // ✅ تحديث حالة الجهاز في Firebase
   Future<void> updateDeviceState(bool value) async {
-    if (isSwitched == value) return; // تجنب إرسال طلب إذا لم تتغير الحالة
+    if (isSwitched == value) return;
 
     try {
       DatabaseReference ref =
           FirebaseDatabase.instance.ref("devices/${widget.deviceId}");
       await ref.update({
         'isOn': value,
+        'startTime':
+            value ? DateTime.now().toIso8601String() : null, // حفظ وقت التشغيل
       });
 
       if (mounted) {
         setState(() {
           isSwitched = value;
+          if (isSwitched) {
+            startTime = DateTime.now(); // حفظ وقت بداية التشغيل
+            _startTimer(); // بدء العداد
+          } else {
+            _stopTimer(); // إيقاف العداد عند الإغلاق
+          }
         });
       }
     } catch (e) {
@@ -70,9 +91,47 @@ class _CustomeSmallContinerState extends State<CustomeSmallContiner> {
     }
   }
 
+  // ✅ بدء العداد التصاعدي عند تشغيل الجهاز
+  void _startTimer() {
+    if (_timer != null) _timer!.cancel(); // إيقاف أي عداد سابق
+
+    // حساب الوقت المنقضي منذ تشغيل الجهاز
+    if (startTime != null) {
+      Duration elapsed = DateTime.now().difference(startTime!);
+      elapsedMinutes = elapsed.inMinutes % 60;
+      elapsedHours = elapsed.inHours;
+    } else {
+      elapsedMinutes = 0;
+      elapsedHours = 0;
+    }
+
+    // تشغيل العداد كل دقيقة
+    _timer = Timer.periodic(const Duration(minutes: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          elapsedMinutes++;
+          if (elapsedMinutes >= 60) {
+            elapsedMinutes = 0;
+            elapsedHours++;
+          }
+        });
+      }
+    });
+  }
+
+  // ✅ إيقاف العداد عند إطفاء الجهاز
+  void _stopTimer() {
+    _timer?.cancel();
+    setState(() {
+      elapsedMinutes = 0;
+      elapsedHours = 0;
+    });
+  }
+
   @override
   void dispose() {
     _subscription?.cancel(); // إلغاء الاشتراك عند التخلص من الـ State
+    _timer?.cancel(); // إيقاف العداد
     super.dispose();
   }
 
@@ -82,7 +141,7 @@ class _CustomeSmallContinerState extends State<CustomeSmallContiner> {
       padding: const EdgeInsets.symmetric(horizontal: 10.0),
       child: Container(
         width: 180,
-        height: 185,
+        height: 180,
         decoration: BoxDecoration(
           gradient: LinearGradient(
               colors: klistappColor,
@@ -111,9 +170,9 @@ class _CustomeSmallContinerState extends State<CustomeSmallContiner> {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(20),
                     child: Image.asset(
-                      "images/lamp.png", // مسار صورة الجهاز
+                      "images/lamp.png",
                       fit: BoxFit.cover,
-                      width: 60, // تحديد حجم الصورة
+                      width: 60,
                       height: 60,
                     ),
                   ),
@@ -124,8 +183,7 @@ class _CustomeSmallContinerState extends State<CustomeSmallContiner> {
                     child: Switch(
                       value: isSwitched,
                       onChanged: (value) {
-                        updateDeviceState(
-                            value); // تحديث الحالة في Realtime Database عند تغيير التبديل
+                        updateDeviceState(value);
                       },
                       activeColor: Colors.green,
                       activeTrackColor: Colors.lightGreenAccent,
@@ -146,21 +204,26 @@ class _CustomeSmallContinerState extends State<CustomeSmallContiner> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        widget.messageText, // نص الرسالة
+                        widget.messageText,
                         style: const TextStyle(
                           color: Colors.black87,
-                          fontSize: 22, // تقليل حجم الخط لتحسين العرض
+                          fontSize: 22,
                           fontWeight: FontWeight.bold,
                         ),
-                        overflow: TextOverflow
-                            .ellipsis, // تقصير النص الطويل بدلًا من كسره
+                        overflow: TextOverflow.ellipsis,
                         maxLines: 1,
                       ),
                       const SizedBox(height: 5),
-                      const Text(
-                        "open | 1H 30Min", // نص إضافي
+
+                      // ✅ عرض حالة الجهاز
+                      Text(
+                        isSwitched
+                            ? "Open | $elapsedHours H ${elapsedMinutes} Min"
+                            : "Closed",
                         style: TextStyle(
-                          color: Colors.black26,
+                          color: isSwitched
+                              ? const Color.fromARGB(128, 76, 175, 79)
+                              : const Color.fromARGB(84, 244, 67, 54),
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
                         ),
